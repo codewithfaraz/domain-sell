@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 
-const stripePromise = loadStripe("your_publishable_key");
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "");
 
 const BuyDomain = () => {
   const [formData, setFormData] = useState({
@@ -11,15 +11,71 @@ const BuyDomain = () => {
     email: "",
     phone: "",
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Add Stripe payment logic here
+    setLoading(true);
+    setError(null);
+
+    try {
+      const stripe = await stripePromise;
+      if (!stripe) throw new Error("Stripe failed to load");
+
+      // Example price in cents (e.g., $10.00)
+      const price = 1000;
+
+      // Create a payment intent on your server
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: price,
+          domainDetails: formData,
+        }),
+      });
+
+      const { clientSecret } = await response.json();
+
+      // Confirm the payment with Stripe.js
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: {
+            // You would typically use stripe.elements() here
+            // This is just a placeholder
+          },
+          billing_details: {
+            name: formData.name,
+            email: formData.email,
+          },
+        },
+      });
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Payment successful
+      console.log("Payment successful!");
+      // Add success handling logic here
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-3xl font-bold mb-6">Buy a Domain</h1>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="text"
@@ -60,9 +116,10 @@ const BuyDomain = () => {
         />
         <button
           type="submit"
-          className="w-full bg-yellow-400 text-black py-2 px-4 rounded hover:bg-yellow-500"
+          className="w-full bg-yellow-400 text-black py-2 px-4 rounded hover:bg-yellow-500 disabled:opacity-50"
+          disabled={loading}
         >
-          Submit Offer
+          {loading ? "Processing..." : "Submit Offer"}
         </button>
       </form>
     </div>
